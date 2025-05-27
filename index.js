@@ -9,6 +9,7 @@ import db from "./utils/db.js";
 
 // import all routes
 import userRoutes from "./routes/user.routes.js";
+import cookieParser from "cookie-parser";
 
 dotenv.config();
 
@@ -16,6 +17,7 @@ const app = express(); // initialization
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 const port = process.env.PORT || 4000;
 
 app.get("/", (req, res) => {

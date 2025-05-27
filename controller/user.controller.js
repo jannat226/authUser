@@ -1,15 +1,8 @@
 import User from "../model/User.model.js";
 import nodemailer from "nodemailer";
-// const registerUser = async (req, res) => {
-//   // res.send("registered!");
-//   // // get data
-//   const { name, email, password } = req.body;
-//   if (!name || !email || !password) {
-//     console.log("hey there");
-//     return res.status(400).json({
-//       message: "All fields are required!!!",
-//     });
-//   }
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import crypto from "crypto"; // Add this line
 
 //   // Validate
 //   // check if its already existing
@@ -18,7 +11,7 @@ import nodemailer from "nodemailer";
 //   // save token in db
 //   // send token as email to user
 //   // send sucess status to user
-// };
+
 const registerUser = async (req, res) => {
   const { name, email, password } = req.body || {};
 
@@ -35,9 +28,7 @@ const registerUser = async (req, res) => {
   try {
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(201).json({
-        msg: "User already exist",
-      });
+      return res.status(409).json({ msg: "User already exists" });
     }
     const user = await User.create({
       name,
@@ -51,7 +42,7 @@ const registerUser = async (req, res) => {
       });
     }
 
-    const token = crypto.randomByte(32).toString("hex");
+    const token = crypto.randomBytes(32).toString("hex");
     console.log(token);
     user.verificationToken = token;
     await user.save();
@@ -68,6 +59,7 @@ const registerUser = async (req, res) => {
         pass: process.env.MAILTRAP_PASSWORD,
       },
     });
+    console.log("Mail sent!");
 
     const mailOptions = {
       from: process.env.MAILTRAP_SENDERMAIL,
@@ -104,6 +96,75 @@ const verifyUser = async (req, res) => {
       msg: "Invalid Token",
     });
   }
+  const user = await User.findOne({ verificationToken: token });
+  if (!user) {
+    return res.status(400).json({
+      msg: "Invalid Token",
+    });
+  }
+  user.isVerified = true;
+  user.verificationToken = undefined;
+  await user.save();
+  return res.status(200).json({
+    msg: "Email verified successfully!",
+    success: true,
+  });
 };
 
-export { registerUser, verifyUser };
+const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({
+      msg: "all fields are required!",
+    });
+  }
+  try {
+    const user = await User.findOne({ email: email });
+    if (!user) {
+      return res.status(400).json({
+        msg: "Invalid email",
+      });
+    }
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({
+        msg: "invalid username or password",
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(401).json({
+        msg: "Please verify your email before logging in.",
+      });
+    }
+
+    const token = jwt.sign({ id: user.id, role: user.role }, "shhh", {
+      expiresIn: "24h",
+    });
+    const cookieOptions = {
+      httpOnly: true,
+      secure: true,
+      maxAge: 24 * 60 * 60 * 1000,
+    };
+    res.cookie("token", token, cookieOptions);
+
+    return res.status(200).json({
+      success: true,
+      message: "Login Successful",
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        role: user.role,
+      },
+    });
+  } catch (error) {
+    res.status(400).json({
+      msg: "User not registered",
+      error,
+      success: false,
+    });
+  }
+};
+
+export { registerUser, verifyUser, loginUser };
