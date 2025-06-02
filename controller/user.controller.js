@@ -59,7 +59,7 @@ const registerUser = async (req, res) => {
         pass: process.env.MAILTRAP_PASSWORD,
       },
     });
-    console.log("Mail sent!");
+    // console.log("Mail sent!");
 
     const mailOptions = {
       from: process.env.MAILTRAP_SENDERMAIL,
@@ -167,4 +167,127 @@ const loginUser = async (req, res) => {
   }
 };
 
-export { registerUser, verifyUser, loginUser };
+const getMe = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id).select("-password");
+
+    if (!user) {
+      return res.status.json({
+        success: false,
+        message: "User not found",
+      });
+    }
+    res.status(200).json({
+      success: true,
+      user,
+    });
+  } catch (error) {}
+};
+const logout = async (req, res) => {
+  console.log("Hey Jannat");
+  try {
+    res.cookie("token", "", {
+      expires: new Date(0),
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Logged out sucessfully",
+    });
+  } catch (error) {}
+};
+const forgotPassword = async (req, res) => {
+  try {
+    // get email
+    const { email } = req.body.email;
+    if (!email) {
+      return res.status(400).json({ msg: "Please provide an email" });
+    }
+
+    const user = User.findOne({ email });
+    if (!user) {
+      return res.status(200).json({
+        msg: "User not found",
+      });
+    }
+    // find user based on email
+    //reset token
+    const token = crypto.randomBytes(32).toString("hex");
+    user.resetPasswordToken = token;
+    user.resetPasswordExpires = new Date.now() + 10 * 60 * 1000;
+    user.save({ validateBeforeSave: false });
+    // reset expire => new Date.now() + 10*60*1000 =>user.save
+    // send email => design url
+    const resetURL = `${process.env.BASE_URL}/reset-password/${token}`;
+    // Create a test account or replace with real credentials.
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAILTRAP_HOST,
+      port: process.env.MAILTRAP_PORT,
+      secure: false, // true for 465, false for other ports
+      auth: {
+        user: process.env.MAILTRAP_USERNAME,
+        pass: process.env.MAILTRAP_PASSWORD,
+      },
+    });
+    // console.log("Mail sent!");
+
+    const mailOptions = {
+      from: process.env.MAILTRAP_SENDERMAIL,
+      to: user.email,
+      subject: "Forgot password ✔",
+      text: `Click the following link to reset your password: ${resetURL}`, // plain‑text body
+    };
+    await transporter.sendMail(mailOptions);
+    res.status(200).json({
+      msg: "Password Changed Successfully",
+      success: true,
+    });
+  } catch (error) {
+    console.error("Forgot Password Error:", error.message);
+    res.status(500).json({ msg: "Something went wrong", success: false });
+  }
+};
+const resetPassword = async () => {
+  //collect token from params
+  //password from req.body
+  const { token } = req.params;
+  const { password } = req.body;
+  try {
+    if (!token || !password) {
+      return res.status(400).json({ msg: "Token and password are required" });
+    }
+    const user = await User.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: Date.now() },
+    });
+    if (!user) {
+      return res.status(400).json({
+        msg: "token invalid",
+      });
+    }
+    user.password = password;
+    user.resetPasswordToken = undefined;
+    user.resetPasswordExpires = undefined;
+    // set password in user
+    // empty the resetPasswordToken adn resetPasswordExpires token =>reset
+    //save
+    await user.save();
+
+    res
+      .status(200)
+      .json({ msg: "Password has been reset successfully", success: true });
+  } catch (error) {
+    console.error("Reset Password Error:", error.message);
+    res.status(500).json({ msg: "Something went wrong", success: false });
+  }
+};
+
+export {
+  registerUser,
+  verifyUser,
+  loginUser,
+  getMe,
+  logout,
+  forgotPassword,
+  resetPassword,
+};
